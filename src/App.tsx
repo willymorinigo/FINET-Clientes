@@ -584,30 +584,42 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           
           {/* BRAND AND SLOGAN LOGO */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-[5px] bg-[#cccc00] border-0 flex items-center justify-center shadow-sm">
+          <div 
+            onClick={() => {
+              setSelectedClient(null);
+              setShowBillingTable(false);
+            }}
+            className="flex items-center gap-3 cursor-pointer hover:opacity-90 select-none"
+            title="Inicio - Dashboard General"
+          >
+            <div className="w-10 h-10 rounded-[5px] bg-[#cccc00] border-0 flex items-center justify-center shadow-sm" style={{ marginTop: '4px' }}>
               <Compass className="w-6 h-6 text-[#000000] logo-spin" />
             </div>
             <div>
               <span 
-                className="font-extrabold tracking-widest text-slate-950"
+                className="font-extrabold tracking-widest text-slate-950 block"
                 style={{
-                  fontSize: '23px',
+                  fontSize: '33px',
                   fontFamily: 'Arial',
                   borderWidth: '0px',
                   borderColor: '#000000',
-                  paddingTop: '0px',
+                  paddingTop: '-6px',
                   paddingBottom: '0px',
                   paddingRight: '0px',
                   marginTop: '0px',
                   marginLeft: '0px',
-                  marginBottom: '0px',
-                  lineHeight: '30px'
+                  marginBottom: '-6px',
+                  lineHeight: '41px'
                 }}
               >
                 FINET
               </span>
-              <span className="block text-[8px] text-[#646464] font-bold uppercase tracking-widest">Acompañamiento financiero</span>
+              <span 
+                className="block text-[8px] text-[#646464] font-bold uppercase tracking-widest"
+                style={{ lineHeight: '10px' }}
+              >
+                Acompañamiento financiero
+              </span>
             </div>
           </div>
 
