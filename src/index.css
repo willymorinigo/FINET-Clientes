@@ -25,6 +25,15 @@ input {
   color: #0f172a !important; /* Strong dark carbon color for text */
 }
 
+/* Specific override to restore highly legible contrast on inputs inside dark background containers */
+.bg-slate-950 input,
+.bg-zinc-950 input,
+.bg-zinc-900 input,
+input.text-white {
+  color: #ffffff !important;
+  caret-color: #cccc00 !important; /* Brand yellow color caret on dark environments */
+}
+
 button, 
 select, 
 option,

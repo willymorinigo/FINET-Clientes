@@ -179,7 +179,8 @@ export default function LoginScreen({ advisors, onLogin }: LoginScreenProps) {
                       if (errorCode) setErrorCode(null);
                     }}
                     disabled={isSubmitting}
-                    className="w-full bg-zinc-950 border border-zinc-800 hover:border-zinc-750 text-white rounded-xl pl-9 pr-10 py-3 text-xs outline-none focus:border-brand focus:ring-1 focus:ring-brand/35 transition font-mono tracking-widest text-center"
+                    className="w-full bg-zinc-950 border border-zinc-700 hover:border-zinc-500 text-white rounded-xl pl-9 pr-10 py-3 text-xs outline-none focus:border-[#cccc00] focus:ring-1 focus:ring-[#cccc00]/35 transition font-mono tracking-widest text-center"
+                    style={{ color: '#ffffff' }}
                     required
                   />
                   <button
