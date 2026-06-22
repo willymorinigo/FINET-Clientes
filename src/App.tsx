@@ -13,6 +13,7 @@ import { formatNumberARS } from "./lib/format";
 import DashboardStats from "./components/DashboardStats";
 import ClientList from "./components/ClientList";
 import ClientDetail from "./components/ClientDetail";
+import BillingMonitoring from "./components/BillingMonitoring";
 import CsvImportModal from "./components/CsvImportModal";
 import AlertCenter from "./components/AlertCenter";
 import PrintPDFReport from "./components/PrintPDFReport";
@@ -44,6 +45,7 @@ export default function App() {
 
   // App views state
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [showBillingTable, setShowBillingTable] = useState(false);
   const [showCSVModal, setShowCSVModal] = useState(false);
   const [printingClient, setPrintingClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
@@ -684,11 +686,12 @@ export default function App() {
           )}
 
           {/* GLOBAL INSIGHT KPI CARDS */}
-          {!selectedClient && (
+          {!selectedClient && !showBillingTable && (
             <DashboardStats 
               clients={filteredClients} 
               performances={filteredPerformances} 
               transactions={filteredTransactions} 
+              onBillingClick={() => setShowBillingTable(true)}
             />
           )}
 
@@ -709,6 +712,17 @@ export default function App() {
               advisors={advisors}
               onEditClient={handleEditClient}
               onDeleteClient={handleDeleteClient}
+            />
+          ) : showBillingTable ? (
+            <BillingMonitoring 
+              clients={filteredClients}
+              performances={filteredPerformances}
+              transactions={filteredTransactions}
+              advisors={advisors}
+              onSelectClient={(cli) => {
+                setSelectedClient(cli);
+              }}
+              onBack={() => setShowBillingTable(false)}
             />
           ) : (
             <ClientList 

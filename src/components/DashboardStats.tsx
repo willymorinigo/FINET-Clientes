@@ -6,9 +6,10 @@ interface StatsProps {
   clients: Client[];
   performances: Performance[];
   transactions: Transaction[];
+  onBillingClick?: () => void;
 }
 
-export default function DashboardStats({ clients, performances, transactions }: StatsProps) {
+export default function DashboardStats({ clients, performances, transactions, onBillingClick }: StatsProps) {
   // 1. Assets Under Management (AUM)
   const totalAUM = clients.reduce((acc, cli) => acc + (cli.active ? cli.currentBalance : 0), 0);
 
@@ -143,9 +144,14 @@ export default function DashboardStats({ clients, performances, transactions }: 
       </div>
 
       {/* ACTION LABELS / ANNIVERSARIES LIST */}
-      <div id="stat-actions" className={`bg-white border rounded-xl p-5 transition-all duration-300 shadow-sm relative overflow-hidden group ${
-        eligibilityCount > 0 ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200'
-      }`}>
+      <div 
+        id="stat-actions" 
+        onClick={onBillingClick}
+        title="Haga clic para ver el detalle de cobros"
+        className={`border rounded-xl p-5 transition-all duration-300 shadow-sm relative overflow-hidden group cursor-pointer hover:border-amber-400 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${
+          eligibilityCount > 0 ? 'bg-amber-50/40 border-amber-300' : 'bg-white border-slate-200'
+        }`}
+      >
         <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
           <ShieldAlert className="w-24 h-24 text-amber-500" />
         </div>
@@ -195,6 +201,11 @@ export default function DashboardStats({ clients, performances, transactions }: 
         ) : (
           <p className="text-[10px] text-slate-400 mt-2">Sin vencimientos para el mes próximo</p>
         )}
+        <div className="mt-3 pt-2 border-t border-dashed border-slate-200 flex justify-end">
+          <span className="text-[10px] font-bold text-slate-500 hover:text-brand flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform duration-150">
+            Ver planilla de cobros →
+          </span>
+        </div>
       </div>
     </div>
   );
