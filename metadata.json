@@ -1,0 +1,6 @@
+{
+  "name": "FINET Clientes y Carteras",
+  "description": "Plataforma de acompañamiento financiero para FINET. Seguimiento de carteras, rendimiento histórico, proyecciones, hitos, reportes en PDF y gestión documental.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

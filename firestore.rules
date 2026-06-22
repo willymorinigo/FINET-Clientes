@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Advisors collection rules
+    match /advisors/{advisorId} {
+      allow read, write: if true;
+    }
+
+    // Clients collection rules
+    match /clients/{clientId} {
+      allow read, write: if true;
+    }
+
+    // Performances collection rules
+    match /performances/{performanceId} {
+      allow read, write: if true;
+    }
+
+    // Transactions collection rules
+    match /transactions/{transactionId} {
+      allow read, write: if true;
+    }
+
+    // Documents collection rules
+    match /documents/{documentId} {
+      allow read, write: if true;
+    }
+
+    // Alerts collection rules
+    match /alerts/{alertId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "Advisor": {
+      "title": "Advisor",
+      "description": "Finet Financial advisor who manages clients and carteras",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Finet Client under financial management",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "advisorId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "initialCapital": { "type": "number" },
+        "initialFee": { "type": "number" },
+        "startDate": { "type": "string" },
+        "active": { "type": "boolean" },
+        "currentBalance": { "type": "number" },
+        "notes": { "type": "string" },
+        "financialGoal": { "type": "number" },
+        "goalDescription": { "type": "string" }
+      },
+      "required": ["id", "advisorId", "name", "initialCapital", "startDate"]
+    },
+    "Performance": {
+      "title": "Performance",
+      "description": "Monthly investment yield records for a client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "monthYear": { "type": "string" },
+        "profitPercentage": { "type": "number" },
+        "profitAmount": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "clientId", "monthYear", "profitPercentage", "profitAmount"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial operation (deposit, withdrawal, or fee payment) in the portfolio history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "assetCategory": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "clientId", "date", "type", "amount", "assetCategory"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Secure legal or portfolio management documents of the client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "status": { "type": "string" },
+        "url": { "type": "string" }
+      },
+      "required": ["id", "clientId", "title", "uploadDate", "status"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "Notification message logged when milestone is reached",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "date": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "clientId", "title", "message", "date", "read"]
+    }
+  },
+  "firestore": {
+    "/advisors/{advisorId}": {
+      "schema": "Advisor",
+      "description": "Advisors collection"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Clients collection"
+    },
+    "/performances/{performanceId}": {
+      "schema": "Performance",
+      "description": "Yield/Performance records"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Transactions log"
+    },
+    "/documents/{documentId}": {
+      "schema": "Document",
+      "description": "Secure document management"
+    },
+    "/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "Automatic notification rules"
+    }
+  }
+}

@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;450;500;600;700&family=JetBrains+Mono:wght@400;500;655&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand: #cccc00;
+  --color-brand-hover: #b3b300;
+  --color-brand-light: #e6e600;
+  --color-brand-subtle: #fafad2;
+  --color-brand-dark: #999900;
+}
+
+/* Ensure mouse pointers and text cursors are 100% visible and responsive on form fields */
+input[type="text"], 
+input[type="number"], 
+input[type="email"], 
+input[type="month"], 
+input[type="date"], 
+textarea,
+input {
+  cursor: text !important;
+  caret-color: #0f172a !important; /* Dark charcoal caret for clear text cursor visibility */
+  color: #0f172a !important; /* Strong dark carbon color for text */
+}
+
+button, 
+select, 
+option,
+input[type="submit"], 
+input[type="checkbox"], 
+[role="button"] {
+  cursor: pointer !important;
+}
+
+/* Reglas de impresión nítidas y corporativas para FINET */
+@media print {
+  /* Ocultar cualquier elemento por defecto */
+  body, html, #root {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Hacer visible exclusivamente la zona del reporte membretado */
+  #printable-area, #printable-area * {
+    visibility: visible !important;
+  }
+  
+  #printable-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+}
+
