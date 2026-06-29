@@ -540,6 +540,9 @@ export default function App() {
         await deleteDoc(doc(db, "alerts", alert.id));
       }
 
+      // 6. Explicitly set setup flag so that seedDatabaseIfEmpty is bypassed when fetching next
+      await setDoc(doc(db, "settings", "setup"), { seeded: true });
+
       setSelectedClient(null);
       setShowResetConfirm(false);
       await fetchData();

@@ -56,8 +56,16 @@ export async function seedDatabaseIfEmpty() {
       await setDoc(doc(db, "advisors", adv.id), adv);
     }
 
+    // Check persistent setup flag to prevent re-seeding if the database was intentionally cleared
+    const setupDoc = await getDoc(doc(db, "settings", "setup"));
+    if (setupDoc.exists()) {
+      return; // Already initialized, even if currently empty
+    }
+
     const clientsSnap = await getDocs(collection(db, "clients"));
     if (!clientsSnap.empty) {
+      // Mark as seeded to avoid checking again
+      await setDoc(doc(db, "settings", "setup"), { seeded: true });
       return; // Already populated
     }
 
@@ -243,6 +251,9 @@ export async function seedDatabaseIfEmpty() {
     for (const al of alertsList) {
       await setDoc(doc(db, "alerts", al.id), al);
     }
+
+    // Mark the database as seeded so we don't seed again on subsequent empties
+    await setDoc(doc(db, "settings", "setup"), { seeded: true });
 
     console.log("Database seeded successfully!");
   } catch (err) {
