@@ -348,8 +348,9 @@ export default function ClientList({ clients, advisors, onSelectClient, onAddCli
           {filteredClients.map(client => {
             const advisorName = advisors.find(a => a.id === client.advisorId)?.name || "Asesor General";
             const colorTheme = getAdvisorColor(advisorName);
-            const profitValue = client.currentBalance - client.initialCapital;
-            const profitPct = (profitValue / client.initialCapital) * 100;
+            const profitValue = client.currentBalance - client.initialCapital - (client.totalFunding || 0);
+            const totalDeposited = client.initialCapital + (client.totalFunding || 0);
+            const profitPct = totalDeposited > 0 ? (profitValue / totalDeposited) * 100 : 0;
             const progressPct = Math.min((client.currentBalance / client.financialGoal) * 100, 100);
  
             // Calculate length of stay (checks 1-year mark)
@@ -400,6 +401,11 @@ export default function ClientList({ clients, advisors, onSelectClient, onAddCli
                     <div>
                       <span className="block text-[10px] uppercase font-bold text-slate-450 tracking-wide">Capital Inicial</span>
                       <span className="text-sm font-semibold font-sans text-slate-700">${formatNumberARS(client.initialCapital)}</span>
+                      {client.totalFunding ? (
+                        <span className="block text-[10px] text-amber-600 font-sans mt-0.5 font-semibold">
+                          + Fondeos: ${formatNumberARS(client.totalFunding)}
+                        </span>
+                      ) : null}
                     </div>
  
                     <div>

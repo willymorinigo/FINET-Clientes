@@ -59,6 +59,9 @@ export default function ClientDetail({
   // Tab control
   const [activeTab, setActiveTab] = useState<"yields" | "transactions" | "documents">("yields");
 
+  // Pagination for Monthly Profitability and Movements
+  const [activeMonthIndex, setActiveMonthIndex] = useState(0);
+
   // Edit Client Modal/Form State
   const [showEditForm, setShowEditForm] = useState(false);
   const [editName, setEditName] = useState(client.name);
@@ -70,11 +73,18 @@ export default function ClientDetail({
   const [editAdvisorId, setEditAdvisorId] = useState(client.advisorId);
   const [editActive, setEditActive] = useState(client.active);
   const [editStartDate, setEditStartDate] = useState(client.startDate);
+  const [editTotalFunding, setEditTotalFunding] = useState((client.totalFunding || 0).toString());
   const [isSaving, setIsSaving] = useState(false);
 
   // Delete Client Confirmation State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Funding Form State
+  const [showFundingForm, setShowFundingForm] = useState(false);
+  const [fundingAmount, setFundingAmount] = useState("");
+  const [fundingDate, setFundingDate] = useState(new Date().toISOString().split("T")[0]);
+  const [fundingNotes, setFundingNotes] = useState("");
 
   React.useEffect(() => {
     setEditName(client.name);
@@ -86,6 +96,7 @@ export default function ClientDetail({
     setEditAdvisorId(client.advisorId);
     setEditActive(client.active);
     setEditStartDate(client.startDate);
+    setEditTotalFunding((client.totalFunding || 0).toString());
   }, [client]);
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -102,7 +113,8 @@ export default function ClientDetail({
         notes: editNotes || "",
         advisorId: editAdvisorId,
         active: editActive,
-        startDate: editStartDate
+        startDate: editStartDate,
+        totalFunding: parseFloat(editTotalFunding) || 0
       });
       setShowEditForm(false);
     } catch (err) {
@@ -125,13 +137,90 @@ export default function ClientDetail({
     }
   };
 
-  const isFacu = currentAdvisor?.name.toLowerCase().includes("facu") || currentAdvisor?.role === "Administrador General";
+  const handleFundingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fundingAmount || isSaving) return;
+    setIsSaving(true);
+    try {
+      const amount = parseFloat(fundingAmount);
+      const newFundingTotal = (client.totalFunding || 0) + amount;
+
+      // 1. Update total funding in client details
+      await onEditClient(client.id, {
+        totalFunding: newFundingTotal
+      });
+
+      // 2. Add a 'deposit' transaction record
+      await onAddTransaction({
+        clientId: client.id,
+        date: fundingDate,
+        type: "deposit",
+        amount: amount,
+        assetCategory: "Efectivo",
+        description: fundingNotes || "Fondeo adicional: Aporte de capital (no computable para Honorarios)"
+      });
+
+      setFundingAmount("");
+      setFundingNotes("");
+      setShowFundingForm(false);
+    } catch (err) {
+      console.error("Error cargando fondeo:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // All logged-in advisors are allowed to edit and delete clients to manage their portfolios and start from scratch
+  const isFacu = true;
 
   // Performance Form State
   const [showPerfForm, setShowPerfForm] = useState(false);
   const [perfMonth, setPerfMonth] = useState("2026-06");
-  const [perfPercent, setPerfPercent] = useState("");
   const [perfNotes, setPerfNotes] = useState("");
+  const [perfEndingBalance, setPerfEndingBalance] = useState("");
+  const [perfStartingBalance, setPerfStartingBalance] = useState("");
+  const [perfMonthFunding, setPerfMonthFunding] = useState("");
+  const [perfMonthWithdrawals, setPerfMonthWithdrawals] = useState("");
+
+  // Auto-calculate starting balance, deposits and withdrawals of selected month
+  React.useEffect(() => {
+    if (!perfMonth) return;
+    
+    // Calculate starting balance
+    const priorPerformances = clientPerformances.filter(p => p.monthYear < perfMonth);
+    const cumulativeProfit = priorPerformances.reduce((sum, p) => sum + p.profitAmount, 0);
+
+    const priorTxs = clientTransactions.filter(tx => {
+      const txMonthYear = tx.date.substring(0, 7);
+      return txMonthYear < perfMonth;
+    });
+    const cumulativeDeposits = priorTxs
+      .filter(tx => tx.type === "deposit")
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    const cumulativeWithdrawals = priorTxs
+      .filter(tx => tx.type === "withdrawal")
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+    const startingBal = client.initialCapital + cumulativeProfit + cumulativeDeposits - cumulativeWithdrawals;
+    setPerfStartingBalance(startingBal.toString());
+
+    // Calculate funding of the month
+    const monthDeposits = clientTransactions.filter(tx => {
+      const txMonthYear = tx.date.substring(0, 7);
+      return txMonthYear === perfMonth && tx.type === "deposit";
+    }).reduce((sum, tx) => sum + tx.amount, 0);
+    setPerfMonthFunding(monthDeposits.toString());
+
+    // Calculate withdrawals of the month
+    const monthWithdrawalsVal = clientTransactions.filter(tx => {
+      const txMonthYear = tx.date.substring(0, 7);
+      return txMonthYear === perfMonth && tx.type === "withdrawal";
+    }).reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    setPerfMonthWithdrawals(monthWithdrawalsVal.toString());
+
+    // Reset ending balance so user enters it anew
+    setPerfEndingBalance("");
+  }, [perfMonth, client.initialCapital, performances, transactions]);
 
   // Transaction Form State
   const [showTxForm, setShowTxForm] = useState(false);
@@ -154,19 +243,22 @@ export default function ClientDetail({
   const diffDays = Math.floor((today.getTime() - startLocal.getTime()) / (1000 * 3600 * 24));
   const yearsStayed = diffDays / 365;
 
+  const clientPerformances = performances.filter(p => p.clientId === client.id);
+  const clientTransactions = transactions.filter(t => t.clientId === client.id);
+
   // Compute stats
-  const totalInflows = transactions
+  const totalInflows = clientTransactions
     .filter(tx => tx.type === "deposit")
     .reduce((acc, tx) => acc + tx.amount, 0);
 
-  const totalOutflows = transactions
+  const totalOutflows = clientTransactions
     .filter(tx => tx.type === "withdrawal")
     .reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
 
   const initialDesignFee = client.initialFee || 0;
   
   // Filter transactions
-  const filteredTxs = transactions.filter(tx => {
+  const filteredTxs = clientTransactions.filter(tx => {
     if (txFilterAsset !== "all" && tx.assetCategory !== txFilterAsset) return false;
     return true;
   });
@@ -175,12 +267,37 @@ export default function ClientDetail({
   // Since Alejandro & Mariana started in May/June 2025, let's look at the gains made in the year (first 12 months)
   // Let's filter yields of the first 12 months
   // If we don't have exactly 12 months, we calculate cumulative profit of all logged performance values
-  const relativePerformances = performances.sort((a,b) => a.monthYear.localeCompare(b.monthYear));
+  const relativePerformances = clientPerformances.sort((a,b) => a.monthYear.localeCompare(b.monthYear));
   const totalProfitFromYields = relativePerformances.reduce((acc, p) => acc + p.profitAmount, 0);
   
   // Calculate performance fee status
-  const hasFeeCharged = transactions.some(tx => tx.type === "annual_performance_fee");
+  const hasFeeCharged = clientTransactions.some(tx => tx.type === "annual_performance_fee");
   const estimatedPerformanceFee = totalProfitFromYields > 0 ? totalProfitFromYields * 0.10 : 0;
+
+  // Sort descending so index 0 represents the newest month
+  const clientPerformancesSorted = [...clientPerformances].sort((a, b) => b.monthYear.localeCompare(a.monthYear));
+  const validMonthIndex = Math.min(Math.max(0, activeMonthIndex), Math.max(0, clientPerformancesSorted.length - 1));
+  const activePerformance = clientPerformancesSorted[validMonthIndex];
+  const activeMonthYear = activePerformance ? activePerformance.monthYear : null;
+
+  const activeMonthTransactions = clientTransactions.filter(tx => {
+    if (!activeMonthYear) return false;
+    return tx.date.startsWith(activeMonthYear);
+  });
+
+  const formatMonthYearHuman = (yyyyMm: string | null): string => {
+    if (!yyyyMm || !yyyyMm.includes("-")) return yyyyMm || "Periodo";
+    const [year, month] = yyyyMm.split("-");
+    const monthNames = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    const mIndex = parseInt(month, 10) - 1;
+    if (mIndex >= 0 && mIndex < 12) {
+      return `${monthNames[mIndex]} de ${year}`;
+    }
+    return yyyyMm;
+  };
 
   // Chart data formatting
   // Prepare starting capital + accumulator representing historical growth
@@ -205,23 +322,29 @@ export default function ClientDetail({
     };
   });
 
+  const startBalNum = parseFloat(perfStartingBalance) || 0;
+  const endBalNum = parseFloat(perfEndingBalance) || 0;
+  const fundNum = parseFloat(perfMonthFunding) || 0;
+  const withNum = parseFloat(perfMonthWithdrawals) || 0;
+
+  // Profit Amount = Final Balance - Starting Balance - Additional Funding + Withdrawals
+  const computedProfitAmount = endBalNum - startBalNum - fundNum + withNum;
+  // Yield Percentage = Profit Amount / Starting Balance
+  const computedProfitPct = startBalNum > 0 ? (computedProfitAmount / startBalNum) * 100 : 0;
+
   const handleAddPerfSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!perfMonth || !perfPercent) return;
-
-    const percentage = parseFloat(perfPercent);
-    // Calculated profit based on current valuation before adding
-    const profitAmount = (client.currentBalance * (percentage / 100));
+    if (!perfMonth || !perfEndingBalance) return;
 
     onAddPerformance({
       clientId: client.id,
       monthYear: perfMonth,
-      profitPercentage: percentage,
-      profitAmount: Math.round(profitAmount),
-      notes: perfNotes || `Rendimiento mensual ingresado para ${perfMonth}`
+      profitPercentage: parseFloat(computedProfitPct.toFixed(2)),
+      profitAmount: Math.round(computedProfitAmount),
+      notes: perfNotes || `Rentabilidad mes ${perfMonth} (F. inicial: $${formatNumberARS(startBalNum)} → F. final: $${formatNumberARS(endBalNum)})`
     });
 
-    setPerfPercent("");
+    setPerfEndingBalance("");
     setPerfNotes("");
     setShowPerfForm(false);
   };
@@ -484,20 +607,38 @@ export default function ClientDetail({
             <div className="flex items-center justify-end gap-1.5 mt-1">
               <span className="text-slate-500 text-xs">Retorno:</span>
               <span className={`text-xs font-bold font-sans ${
-                (client.currentBalance - client.initialCapital) >= 0 ? "text-emerald-600" : "text-rose-600"
+                (client.currentBalance - client.initialCapital - (client.totalFunding || 0)) >= 0 ? "text-emerald-600" : "text-rose-600"
               }`}>
-                {((client.currentBalance - client.initialCapital) >= 0) ? "+" : ""}
-                {(((client.currentBalance - client.initialCapital) / client.initialCapital) * 100).toFixed(1)}%
+                {(client.currentBalance - client.initialCapital - (client.totalFunding || 0)) >= 0 ? "+" : ""}
+                {((client.currentBalance - client.initialCapital - (client.totalFunding || 0)) / (client.initialCapital + (client.totalFunding || 0)) * 100).toFixed(1)}%
               </span>
             </div>
           </div>
         </div>
 
         {/* METRICS ROW */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-6 border-t border-slate-100">
           <div>
             <span className="block text-[10px] text-slate-450 uppercase font-semibold">Capital Inicial Depositado</span>
             <span className="text-base font-bold font-sans text-slate-700">${formatNumberARS(client.initialCapital)}</span>
+          </div>
+
+          <div>
+            <span className="block text-[10px] text-amber-600 uppercase font-bold flex items-center gap-1">
+              <Database className="w-3 h-3" /> Fondeos Adicionales
+            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-base font-bold font-sans text-slate-700">
+                ${formatNumberARS(client.totalFunding || 0)}
+              </span>
+              <button
+                onClick={() => setShowFundingForm(true)}
+                title="Registrar Nuevo Fondeo"
+                className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div>
@@ -510,8 +651,8 @@ export default function ClientDetail({
 
           <div>
             <span className="block text-[10px] text-slate-450 uppercase font-semibold">Ganancia Neta Generada</span>
-            <span className={`text-base font-bold font-sans ${(client.currentBalance - client.initialCapital) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-              ${formatNumberARS(client.currentBalance - client.initialCapital)}
+            <span className={`text-base font-bold font-sans ${(client.currentBalance - client.initialCapital - (client.totalFunding || 0)) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              ${formatNumberARS(client.currentBalance - client.initialCapital - (client.totalFunding || 0))}
             </span>
           </div>
 
@@ -618,58 +759,153 @@ export default function ClientDetail({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 onSubmit={handleAddPerfSubmit}
-                className="bg-slate-50 border border-slate-200 p-4 rounded-xl mb-4 grid grid-cols-1 md:grid-cols-3 gap-4"
+                className="bg-slate-50 border border-slate-200 p-5 rounded-xl mb-6 flex flex-col gap-4 text-left"
               >
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Año - Mes *</label>
-                  <input
-                    type="month"
-                    required
-                    value={perfMonth}
-                    onChange={(e) => setPerfMonth(e.target.value)}
-                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-brand"
-                  />
+                <div className="border-b border-slate-100 pb-2 mb-1">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-[#cccc00]" />
+                    Cálculo de Rendimiento por Valuación de Cartera
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Ingrese la valuación final y el sistema deducirá automáticamente aportes/retiros del mes para obtener el rendimiento real.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Porcentaje de Ganancia (%) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="Ej. +2.4"
-                    value={perfPercent}
-                    onChange={(e) => setPerfPercent(e.target.value)}
-                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-brand font-sans"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Año - Mes *</label>
+                    <input
+                      type="month"
+                      required
+                      value={perfMonth}
+                      onChange={(e) => setPerfMonth(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00] font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Saldo Inicial (ARS)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. 1.000.000"
+                      value={formatAmountInput(perfStartingBalance)}
+                      onChange={(e) => setPerfStartingBalance(parseAmountInput(e.target.value))}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00] font-sans cursor-text"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">Auto-calculado del mes anterior</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-amber-600 uppercase mb-1">Valuación Final (ARS) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. 1.200.000"
+                      value={formatAmountInput(perfEndingBalance)}
+                      onChange={(e) => setPerfEndingBalance(parseAmountInput(e.target.value))}
+                      className="w-full bg-white border border-amber-200 text-slate-900 font-semibold rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00] font-sans cursor-text"
+                    />
+                    <span className="text-[9px] text-amber-600 mt-0.5 block font-medium">Saldo de la cartera a fin de mes</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Aportes/Fondeos (ARS)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. 100.000"
+                      value={formatAmountInput(perfMonthFunding)}
+                      onChange={(e) => setPerfMonthFunding(parseAmountInput(e.target.value))}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00] font-sans cursor-text"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">No computables para el fee</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Retiros (ARS)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. 50.000"
+                      value={formatAmountInput(perfMonthWithdrawals)}
+                      onChange={(e) => setPerfMonthWithdrawals(parseAmountInput(e.target.value))}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00] font-sans cursor-text"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">Sumados para el rendimiento real</span>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Observaciones</label>
-                  <input
-                    type="text"
-                    placeholder="Ej. Alza del ETF Nasdaq o dividendos de ONs"
-                    value={perfNotes}
-                    onChange={(e) => setPerfNotes(e.target.value)}
-                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-brand"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end mt-1">
+                  <div className="md:col-span-3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Observaciones / Comentarios del Rendimiento</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Incremento impulsado por Renta Variable / Aporte extra excluido de cobros"
+                      value={perfNotes}
+                      onChange={(e) => setPerfNotes(e.target.value)}
+                      className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:ring-0 outline-none focus:border-[#cccc00]"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowPerfForm(false)}
+                      className="py-2 px-3 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 bg-white"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!perfEndingBalance}
+                      className="py-2 px-4 bg-slate-900 border border-slate-950 hover:bg-[#cccc00] hover:text-black hover:border-[#cccc00] text-white font-bold rounded-lg transition disabled:opacity-50"
+                    >
+                      Guardar Rendimiento
+                    </button>
+                  </div>
                 </div>
 
-                <div className="md:col-span-3 flex justify-end gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setShowPerfForm(false)}
-                    className="py-1.5 px-3 border border-slate-200 text-slate-600 rounded hover:bg-slate-50 bg-white"
+                {/* LIVE PREVIEW CALCULATION BOX */}
+                {perfEndingBalance && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-slate-900 text-slate-100 rounded-xl p-4 border border-slate-800 mt-2 text-xs"
                   >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="py-1.5 px-4 bg-slate-900 border border-slate-950 hover:bg-brand hover:text-black hover:border-brand text-white font-medium rounded"
-                  >
-                    Guardar Rendimiento
-                  </button>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-800">
+                      <div className="pt-2 sm:pt-0">
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Fórmula de Rendimiento</span>
+                        <p className="font-mono text-[10px] text-slate-300 mt-1">
+                          V. Final - S. Inicial - Fondeos + Retiros
+                        </p>
+                      </div>
+
+                      <div className="pt-2 sm:pt-0 sm:pl-4">
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Valores Ingresados</span>
+                        <div className="font-sans text-[11px] text-slate-300 mt-1 space-y-0.5">
+                          <div>S. Inicial: <span className="font-bold text-white">${formatNumberARS(startBalNum)}</span></div>
+                          <div>V. Final: <span className="font-bold text-white">${formatNumberARS(endBalNum)}</span></div>
+                          {fundNum > 0 && <div>Aportes: <span className="text-amber-400 font-bold">-${formatNumberARS(fundNum)}</span></div>}
+                          {withNum > 0 && <div>Retiros: <span className="text-blue-400 font-bold">+${formatNumberARS(withNum)}</span></div>}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 sm:pt-0 sm:pl-4">
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Ganancia Neta Devengada</span>
+                        <p className={`text-base font-bold font-sans mt-1 ${computedProfitAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {computedProfitAmount >= 0 ? '+' : ''}${formatNumberARS(computedProfitAmount)}
+                        </p>
+                        <span className="text-[9px] text-slate-400 block mt-0.5">(Rendimiento Orgánico Real)</span>
+                      </div>
+
+                      <div className="pt-2 sm:pt-0 sm:pl-4">
+                        <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Porcentaje de Rendimiento</span>
+                        <p className={`text-lg font-bold font-sans mt-1 ${computedProfitPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {computedProfitPct >= 0 ? '+' : ''}{computedProfitPct.toFixed(2)}%
+                        </p>
+                        <span className="text-[9px] text-slate-400 block mt-0.5 font-bold">Calculado sobre saldo de inicio</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </motion.form>
             )}
 
@@ -715,43 +951,177 @@ export default function ClientDetail({
             )}
           </div>
 
-          {/* HISTORICAL MONTHS LOGS */}
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-              <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">Historial de Rentabilidades Mensuales</span>
-              <span className="text-[10px] font-sans text-slate-500 font-bold">Total periodos: {relativePerformances.length}</span>
+          {/* HISTORICAL MONTHS LOGS - PAGINATED MONTHLY */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+              <div>
+                <span className="font-bold text-slate-800 text-xs uppercase tracking-wider block">Historial de Rentabilidades y Movimientos Mensuales</span>
+                <span className="text-[10px] text-slate-450 font-bold block mt-0.5">Mostrando mes corriente y sus movimientos individuales</span>
+              </div>
+              <span className="text-[10px] font-sans text-slate-500 font-bold bg-white border border-slate-200 px-2.5 py-1 rounded-full shrink-0">
+                Total periodos: {clientPerformancesSorted.length}
+              </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-semibold border-b border-slate-150">
-                    <th className="p-4">Periodo</th>
-                    <th className="p-4 text-center">Porcentaje de Rendimiento</th>
-                    <th className="p-4 text-right">Monto Ganado (ARS)</th>
-                    <th className="p-4">Comentarios del Asesor</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-650">
-                  {relativePerformances.map((perf, index) => (
-                    <tr key={perf.id || index} className="hover:bg-slate-50/55 transition">
-                      <td className="p-4 font-semibold text-slate-800">{perf.monthYear}</td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-sans text-xs font-bold ${
-                          perf.profitPercentage >= 0 ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-rose-50 text-rose-700"
+            {clientPerformancesSorted.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500 italic">
+                No hay registros de rentabilidad mensual cargados para este inversor.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-150">
+                {/* 1. Month performance highlight */}
+                <div className="p-5 bg-amber-50/15 border-b border-slate-100 text-left">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide block">Periodo de Rentabilidad Seleccionado</span>
+                      <h4 className="text-lg font-bold text-slate-800 font-sans mt-0.5">
+                        {formatMonthYearHuman(activeMonthYear)}
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block text-right">Rendimiento</span>
+                        <span className={`text-base font-bold font-sans flex items-center justify-end gap-1 ${
+                          activePerformance.profitPercentage >= 0 ? "text-emerald-600" : "text-rose-600"
                         }`}>
-                          {perf.profitPercentage >= 0 ? "+" : ""}{perf.profitPercentage}%
+                          {activePerformance.profitPercentage >= 0 ? "+" : ""}
+                          {activePerformance.profitPercentage}%
                         </span>
-                      </td>
-                      <td className={`p-4 text-right font-sans font-semibold ${perf.profitAmount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                        ${formatNumberARS(perf.profitAmount)}
-                      </td>
-                      <td className="p-4 text-slate-500 max-w-sm truncate">{perf.notes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+
+                      <div className="border-l border-slate-200 pl-6">
+                        <span className="text-[10px] uppercase font-semibold text-slate-400 block text-right">Monto Ganado</span>
+                        <span className={`text-base font-bold font-sans block text-right ${
+                          activePerformance.profitAmount >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }`}>
+                          ${formatNumberARS(activePerformance.profitAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {activePerformance.notes && (
+                    <div className="mt-3.5 bg-white border border-slate-100 p-3 rounded-lg text-xs text-slate-600 italic">
+                      <span className="font-bold text-slate-700 not-italic block mb-0.5 text-[10px] uppercase tracking-wide">Comentarios del Asesor:</span>
+                      "{activePerformance.notes}"
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Month transactions/movements sub-section */}
+                <div className="p-5 text-left">
+                  <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                    <span>📋 Movimientos del Periodo ({activeMonthYear})</span>
+                  </h5>
+
+                  {activeMonthTransactions.length === 0 ? (
+                    <p className="text-xs text-slate-450 italic bg-slate-50/50 rounded-xl p-4 border border-dashed border-slate-200 text-center">
+                      No se registraron aportes, retiros u otros movimientos en este mes.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-150 rounded-xl">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 uppercase text-[9px] font-semibold border-b border-slate-150">
+                            <th className="p-3">Fecha</th>
+                            <th className="p-3">Concepto</th>
+                            <th className="p-3">Activo</th>
+                            <th className="p-3">Descripción</th>
+                            <th className="p-3 text-right">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-650">
+                          {activeMonthTransactions.map((tx, index) => {
+                            let badgeClass = "bg-slate-50 text-slate-600 border border-slate-150";
+                            let sign = "";
+                            let valClass = "text-slate-700";
+
+                            if (tx.type === "deposit") {
+                              badgeClass = "bg-emerald-50 text-emerald-700 border border-emerald-100";
+                              sign = "+";
+                              valClass = "text-emerald-600";
+                            } else if (tx.type === "withdrawal") {
+                              badgeClass = "bg-rose-50 text-rose-700 border border-rose-100";
+                              sign = "-";
+                              valClass = "text-rose-600";
+                            } else if (tx.type === "initial_advisory_fee") {
+                              badgeClass = "bg-teal-50 text-teal-700 border border-teal-100";
+                              sign = "-";
+                              valClass = "text-teal-600";
+                            } else if (tx.type === "annual_performance_fee") {
+                              badgeClass = "bg-amber-50 text-amber-700 border border-amber-200";
+                              sign = "-";
+                              valClass = "text-amber-700";
+                            }
+
+                            return (
+                              <tr key={tx.id || index} className="hover:bg-slate-50/50 transition">
+                                <td className="p-3 font-sans text-slate-500">{tx.date}</td>
+                                <td className="p-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${badgeClass}`}>
+                                    {tx.type === "deposit" && "APORTE"}
+                                    {tx.type === "withdrawal" && "RETIRO"}
+                                    {tx.type === "initial_advisory_fee" && "HONORARIOS INICIALES"}
+                                    {tx.type === "annual_performance_fee" && "FONDO ANUAL 10%"}
+                                    {tx.type === "yield" && "DEVENGADO RENDIMIENTO"}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-semibold text-slate-700">{tx.assetCategory}</td>
+                                <td className="p-3 text-slate-500 max-w-xs truncate">{tx.description}</td>
+                                <td className={`p-3 text-right font-sans font-bold ${valClass}`}>
+                                  {sign}${formatNumberARS(Math.abs(tx.amount))}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Gorgeous pagination controls */}
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={validMonthIndex === clientPerformancesSorted.length - 1}
+                      onClick={() => setActiveMonthIndex(prev => prev + 1)}
+                      className="py-1.5 px-3 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-semibold rounded-lg transition shadow-sm"
+                    >
+                      ← Mes Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={validMonthIndex === 0}
+                      onClick={() => setActiveMonthIndex(prev => prev - 1)}
+                      className="py-1.5 px-3 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white text-xs font-semibold rounded-lg transition shadow-sm"
+                    >
+                      Mes Siguiente →
+                    </button>
+                  </div>
+
+                  {/* Horizontal direct list of clickable available months */}
+                  <div className="flex flex-wrap items-center gap-1.5 max-w-full overflow-x-auto py-1">
+                    {clientPerformancesSorted.map((perf, idx) => (
+                      <button
+                        key={perf.id || idx}
+                        type="button"
+                        onClick={() => setActiveMonthIndex(idx)}
+                        className={`px-2.5 py-1 text-[10px] font-sans font-bold rounded-lg border transition ${
+                          idx === validMonthIndex
+                            ? "bg-slate-900 border-slate-950 text-white shadow-sm"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                        }`}
+                      >
+                        {perf.monthYear}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1097,6 +1467,83 @@ export default function ClientDetail({
         </div>
       )}
 
+      {/* MONOPHONIC FUNDING MODAL */}
+      {showFundingForm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xl max-w-sm w-full text-left"
+          >
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <Database className="w-4 h-4 text-amber-500" />
+                Registrar Nuevo Fondeo
+              </h3>
+              <button
+                onClick={() => setShowFundingForm(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 transition text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleFundingSubmit} className="space-y-4 pt-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monto en ARS *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. 50.000"
+                  value={formatAmountInput(fundingAmount)}
+                  onChange={(e) => setFundingAmount(parseAmountInput(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha del Fondeo *</label>
+                <input
+                  type="date"
+                  required
+                  value={fundingDate}
+                  onChange={(e) => setFundingDate(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notas / Observaciones</label>
+                <input
+                  type="text"
+                  placeholder="Ej. Aporte de dividendos / ahorro personal"
+                  value={fundingNotes}
+                  onChange={(e) => setFundingNotes(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 text-xs pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFundingForm(false)}
+                  className="py-1.5 px-3 border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 rounded-lg animate-none"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="py-1.5 px-4 bg-slate-900 border border-slate-950 hover:bg-[#cccc00] hover:text-black hover:border-[#cccc00] text-white font-bold rounded-lg shadow-sm transition disabled:opacity-50"
+                >
+                  {isSaving ? "Guardando..." : "Registrar Fondeo"}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
       {/* EDIT MODAL */}
       {showEditForm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -1185,14 +1632,26 @@ export default function ClientDetail({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descripción del Objetivo</label>
-                <input
-                  type="text"
-                  value={editGoalDesc}
-                  onChange={(e) => setEditGoalDesc(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-202 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-amber-600 uppercase mb-1">Total Fondeos (ARS)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 100.000"
+                    value={formatAmountInput(editTotalFunding)}
+                    onChange={(e) => setEditTotalFunding(parseAmountInput(e.target.value))}
+                    className="w-full bg-slate-50 border border-amber-200 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition font-sans cursor-text"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descripción del Objetivo</label>
+                  <input
+                    type="text"
+                    value={editGoalDesc}
+                    onChange={(e) => setEditGoalDesc(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-202 text-slate-800 rounded-lg p-2 text-xs focus:border-[#cccc00] outline-none transition"
+                  />
+                </div>
               </div>
 
               <div>

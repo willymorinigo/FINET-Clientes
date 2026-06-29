@@ -27,8 +27,9 @@ export default function DashboardStats({ clients, performances, transactions, on
   // 5. Average Cumulative Return
   // Calculate average profit percentage across clients with initial capital > 0
   const clientsWithYields = clients.map(cli => {
-    const profit = cli.currentBalance - cli.initialCapital;
-    const profitPercent = (profit / cli.initialCapital) * 100;
+    const profit = cli.currentBalance - cli.initialCapital - (cli.totalFunding || 0);
+    const totalDeposited = cli.initialCapital + (cli.totalFunding || 0);
+    const profitPercent = totalDeposited > 0 ? (profit / totalDeposited) * 100 : 0;
     return profitPercent;
   });
   const avgReturn = clientsWithYields.length > 0 
@@ -178,7 +179,7 @@ export default function DashboardStats({ clients, performances, transactions, on
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-700 relative z-10">
             <span className="block text-[9px] uppercase font-bold text-slate-450 tracking-wider mb-0.5">A vencer el mes próximo (anticipo):</span>
             {upcomingClients.map(item => {
-              const estimatedFee = Math.round((item.client.currentBalance - item.client.initialCapital) * 0.1);
+              const estimatedFee = Math.round((item.client.currentBalance - item.client.initialCapital - (item.client.totalFunding || 0)) * 0.1);
               return (
                 <div key={item.client.id} className="flex justify-between items-center bg-slate-50/50 p-1 rounded hover:bg-slate-100/50 transition duration-150">
                   <span className="font-semibold text-slate-800 truncate max-w-[125px]">

@@ -22,7 +22,7 @@ import LoginScreen from "./components/LoginScreen";
 import { 
   Compass, RefreshCw, BarChart2, Bell, FileText, CheckCircle2, 
   Award, Sparkles, Building, Briefcase, ChevronRight, UserCheck, CalendarDays,
-  LogOut
+  LogOut, Download, FileSpreadsheet, FileJson, Trash2
 } from "lucide-react";
 
 export default function App() {
@@ -49,6 +49,9 @@ export default function App() {
   const [showCSVModal, setShowCSVModal] = useState(false);
   const [printingClient, setPrintingClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showBackupDropdown, setShowBackupDropdown] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Auto-calculated Global variables helper
   const latestMonthYearValue = "2026-05";
@@ -512,6 +515,41 @@ export default function App() {
     }
   };
 
+  // Reset entire Database (clients and all child records) to start from scratch
+  const handleResetDatabase = async () => {
+    setIsResetting(true);
+    try {
+      // 1. Delete all clients
+      for (const client of clients) {
+        await deleteDoc(doc(db, "clients", client.id));
+      }
+      // 2. Delete all transactions
+      for (const tx of transactions) {
+        await deleteDoc(doc(db, "transactions", tx.id));
+      }
+      // 3. Delete all performances
+      for (const perf of performances) {
+        await deleteDoc(doc(db, "performances", perf.id));
+      }
+      // 4. Delete all documents
+      for (const docItem of documents) {
+        await deleteDoc(doc(db, "documents", docItem.id));
+      }
+      // 5. Delete all alerts
+      for (const alert of alerts) {
+        await deleteDoc(doc(db, "alerts", alert.id));
+      }
+
+      setSelectedClient(null);
+      setShowResetConfirm(false);
+      await fetchData();
+    } catch (e) {
+      console.error("Error resetting database:", e);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   // Login Handlers
   const handleLogin = (advisor: Advisor) => {
     setCurrentAdvisor(advisor);
@@ -547,6 +585,159 @@ export default function App() {
     if (isAdmin) return true;
     return filteredClients.some(c => c.id === al.clientId);
   });
+
+  // Export handlers
+  const downloadCSV = (headers: string[], rows: string[][], filename: string) => {
+    try {
+      const csvContent = [
+        headers.join(";"),
+        ...rows.map(row => row.map(val => {
+          const clean = (val ?? "").toString().replace(/"/g, '""');
+          return `"${clean}"`;
+        }).join(";"))
+      ].join("\n");
+
+      // UTF-8 BOM so Excel opens it correctly with accents and special characters
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error downloading CSV:", err);
+    }
+  };
+
+  const handleDownloadBackup = () => {
+    try {
+      const backupData = {
+        exportedAt: new Date().toISOString(),
+        exportedBy: currentAdvisor?.name || "Advisor",
+        clients: filteredClients,
+        performances: filteredPerformances,
+        transactions: filteredTransactions,
+        documents: documents
+      };
+
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = url;
+      downloadAnchor.download = `respaldo_alquimia_capital_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error generating backup download:", err);
+    }
+  };
+
+  const handleExportClientsCSV = () => {
+    const headers = [
+      "ID Cliente",
+      "Nombre",
+      "Email",
+      "Asesor",
+      "Estado",
+      "Capital Inicial (ARS)",
+      "Fondeo Total (ARS)",
+      "Saldo Actual (ARS)",
+      "Fecha de Inicio",
+      "Objetivo",
+      "Descripción de Objetivo",
+      "Notas"
+    ];
+
+    const rows = filteredClients.map(c => {
+      const advisor = advisors.find(a => a.id === c.advisorId);
+      return [
+        c.id,
+        c.name,
+        c.email || "",
+        advisor ? advisor.name : "Sin Asesor",
+        c.active ? "Activo" : "Inactivo",
+        c.initialCapital.toString(),
+        (c.totalFunding || 0).toString(),
+        c.currentBalance.toString(),
+        c.startDate,
+        c.goalType,
+        c.goalDescription || "",
+        c.notes || ""
+      ];
+    });
+
+    downloadCSV(headers, rows, `clientes_alquimia_capital_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const handleExportTransactionsCSV = () => {
+    const headers = [
+      "ID Transacción",
+      "Fecha",
+      "ID Cliente",
+      "Cliente",
+      "Concepto",
+      "Activo",
+      "Monto (ARS)",
+      "Descripción"
+    ];
+
+    const rows = filteredTransactions.map(t => {
+      const client = clients.find(c => c.id === t.clientId);
+      let humanType = t.type;
+      if (t.type === "deposit") humanType = "Aporte";
+      else if (t.type === "withdrawal") humanType = "Retiro";
+      else if (t.type === "initial_advisory_fee") humanType = "Honorario Inicial";
+      else if (t.type === "annual_performance_fee") humanType = "Fondo Anual 10%";
+      else if (t.type === "yield") humanType = "Rendimiento Devengado";
+
+      return [
+        t.id || "",
+        t.date,
+        t.clientId,
+        client ? client.name : "Cliente Desconocido",
+        humanType,
+        t.assetCategory || "",
+        t.amount.toString(),
+        t.description || ""
+      ];
+    });
+
+    downloadCSV(headers, rows, `transacciones_alquimia_capital_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const handleExportPerformancesCSV = () => {
+    const headers = [
+      "ID Registro",
+      "Periodo",
+      "ID Cliente",
+      "Cliente",
+      "Rendimiento (%)",
+      "Monto Ganado (ARS)",
+      "Comentarios/Observaciones"
+    ];
+
+    const rows = filteredPerformances.map(p => {
+      const client = clients.find(c => c.id === p.clientId);
+      return [
+        p.id || "",
+        p.monthYear,
+        p.clientId,
+        client ? client.name : "Cliente Desconocido",
+        p.profitPercentage.toString(),
+        p.profitAmount.toString(),
+        p.notes || ""
+      ];
+    });
+
+    downloadCSV(headers, rows, `rentabilidades_mensuales_${new Date().toISOString().split('T')[0]}.csv`);
+  };
 
   // Automated Monthly General Control report computation:
   // Dynamically analyzes active accounts and logs and outputs a beautiful KPI summaries of May/June 2026.
@@ -633,6 +824,91 @@ export default function App() {
               <RefreshCw className="w-3.5 h-3.5 text-slate-800 animate-spin-slow" />
               Ingesta Rápida
             </button>
+
+            <div className="relative">
+              <button
+                onClick={() => setShowBackupDropdown(!showBackupDropdown)}
+                title="Respaldar o exportar datos"
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl hover:border-amber-500 hover:bg-amber-50/50 text-xs font-semibold text-slate-655 hover:text-slate-900 transition shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-800" />
+                Respaldar Datos
+              </button>
+
+              {showBackupDropdown && (
+                <>
+                  {/* Backdrop overlay to close when clicking outside */}
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setShowBackupDropdown(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
+                    <div className="px-3 py-1 border-b border-slate-100 mb-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Opciones de Respaldo</span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        handleDownloadBackup();
+                        setShowBackupDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition"
+                    >
+                      <FileJson className="w-3.5 h-3.5 text-slate-500" />
+                      Descargar Base de Datos (.json)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleExportClientsCSV();
+                        setShowBackupDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      Exportar Clientes (Excel / .csv)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleExportTransactionsCSV();
+                        setShowBackupDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      Exportar Transacciones (Excel / .csv)
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleExportPerformancesCSV();
+                        setShowBackupDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      Exportar Rentabilidades (Excel / .csv)
+                    </button>
+
+                    <div className="px-3 py-1 border-t border-b border-slate-100 my-1 bg-rose-50/30">
+                      <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block">Zona Peligrosa</span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowResetConfirm(true);
+                        setShowBackupDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold hover:bg-rose-50 text-rose-650 flex items-center gap-2 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                      Reiniciar de Cero (Borrar Todo)
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* AUTOMATED ALERTCENTER NOTIFICATIONS DROPDOWN */}
             <AlertCenter 
@@ -767,6 +1043,41 @@ export default function App() {
           transactions={filteredTransactions} 
           onClose={() => setPrintingClient(null)} 
         />
+      )}
+
+      {/* 5. DATABASE RESET CONFIRMATION MODAL */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xl max-w-md w-full text-left">
+            <h3 className="text-base font-bold text-rose-700 flex items-center gap-2">
+              ⚠️ ¿Reiniciar toda la Base de Datos?
+            </h3>
+            <p className="text-xs text-slate-650 mt-3 leading-relaxed">
+              Esta acción es <strong>permanente, irreversible y definitiva</strong>. 
+              Eliminará a todos los inversores administrados en FINET, junto con todo su historial de transacciones, rendimientos mensuales, alertas y documentos de manera definitiva.
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              Se recomienda descargar un respaldo en formato JSON o planillas Excel desde el mismo menú de respaldo antes de continuar.
+            </p>
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-semibold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleResetDatabase}
+                disabled={isResetting}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-xs transition shadow-sm disabled:opacity-50"
+              >
+                {isResetting ? "Eliminando todo..." : "Sí, Reiniciar Base de Datos"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

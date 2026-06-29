@@ -69,9 +69,10 @@ export default function BillingMonitoring({
         const isDueNextMonth = startMonth === nextMonthIndex;
 
         // Accumulated parameters
-        const accumulatedProfit = cli.currentBalance - cli.initialCapital;
-        const accumulatedProfitPercent = cli.initialCapital > 0 
-          ? (accumulatedProfit / cli.initialCapital) * 100 
+        const accumulatedProfit = cli.currentBalance - cli.initialCapital - (cli.totalFunding || 0);
+        const totalDeposited = cli.initialCapital + (cli.totalFunding || 0);
+        const accumulatedProfitPercent = totalDeposited > 0 
+          ? (accumulatedProfit / totalDeposited) * 100 
           : 0;
 
         // 10% performance fee estimated

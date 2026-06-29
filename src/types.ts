@@ -19,6 +19,7 @@ export interface Client {
   notes: string;
   financialGoal: number; // El objetivo personalizado, e.g., $50000
   goalDescription: string;
+  totalFunding?: number; // Total de fondeos adicionales cargados (no computables para ganancias)
 }
 
 export interface Performance {

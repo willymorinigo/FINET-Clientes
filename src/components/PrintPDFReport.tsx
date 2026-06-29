@@ -47,8 +47,9 @@ export default function PrintPDFReport({ client, advisorName, performances, tran
   };
   const fullAdvisorName = getFullAdvisorName(advisorName);
 
-  const profitVal = client.currentBalance - client.initialCapital;
-  const profitPct = (profitVal / client.initialCapital) * 100;
+  const profitVal = client.currentBalance - client.initialCapital - (client.totalFunding || 0);
+  const totalDeposited = client.initialCapital + (client.totalFunding || 0);
+  const profitPct = totalDeposited > 0 ? (profitVal / totalDeposited) * 100 : 0;
 
   const performancesSorted = [...performances]
     .filter(p => p.clientId === client.id)
@@ -455,6 +456,11 @@ export default function PrintPDFReport({ client, advisorName, performances, tran
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <span className="block text-[9px] uppercase font-semibold text-slate-400">Capital Inicial</span>
                   <span className="text-sm font-bold font-mono text-slate-900">${formatNumberARS(client.initialCapital)}</span>
+                  {client.totalFunding ? (
+                    <span className="block text-[9px] text-amber-700 font-semibold font-mono mt-0.5">
+                      + Fond. ${formatNumberARS(client.totalFunding)}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
